@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>外壁カラーシミュレーター</title>
+  <style>
+    /* CSS は後で実装 */
+  </style>
+</head>
+<body>
+  <header id="app-header">
+    <h1>外壁カラーシミュレーター</h1>
+    <p class="subtitle">日塗工色番号で外壁の色をシミュレーション</p>
+  </header>
+
+  <main id="app-main">
+
+    <!-- 1. 画像入力エリア -->
+    <section id="image-input-section">
+      <h2>1. 写真を読み込む</h2>
+      <div class="input-tabs">
+        <button data-tab="file">ファイル選択</button>
+        <button data-tab="base64">base64貼り付け</button>
+        <button data-tab="url">URL指定</button>
+      </div>
+      <div id="tab-file" class="tab-panel">
+        <input type="file" id="file-input" accept="image/*" />
+      </div>
+      <div id="tab-base64" class="tab-panel" hidden>
+        <textarea id="base64-input" placeholder="data:image/... または base64文字列"></textarea>
+        <button id="base64-load-btn">読み込む</button>
+      </div>
+      <div id="tab-url" class="tab-panel" hidden>
+        <input type="text" id="url-input" placeholder="https://..." />
+        <button id="url-load-btn">読み込む</button>
+      </div>
+    </section>
+
+    <!-- 2. キャンバス + マスク描画 -->
+    <section id="canvas-section">
+      <h2>2. 外壁エリアを指定</h2>
+      <div id="canvas-wrapper">
+        <canvas id="image-canvas"></canvas>
+        <canvas id="overlay-canvas"></canvas>
+      </div>
+      <div id="mask-controls">
+        <label>編集中のエリア:
+          <select id="region-select">
+            <option value="0">エリア1</option>
+            <option value="1">エリア2</option>
+          </select>
+        </label>
+        <button id="draw-start-btn">ポリゴン描画開始</button>
+        <button id="draw-undo-btn">直前の点を取消</button>
+        <button id="draw-finish-btn">確定</button>
+        <button id="draw-clear-btn">クリア</button>
+      </div>
+    </section>
+
+    <!-- 3. 色指定 -->
+    <section id="color-section">
+      <h2>3. 色を指定</h2>
+      <div class="color-controls">
+        <label>日塗工色番号:
+          <input type="text" id="nittoko-input" placeholder="例: 25-75B" />
+          <button id="nittoko-apply-btn">変換</button>
+        </label>
+        <label>HEX:
+          <input type="color" id="hex-input" value="#888888" />
+          <input type="text" id="hex-text" value="#888888" />
+        </label>
+        <div id="color-preview" class="swatch"></div>
+      </div>
+      <div class="slider-controls">
+        <label>彩度ブレンド: <input type="range" id="sat-slider" min="0" max="1" step="0.01" value="0.7" /><span id="sat-value">0.70</span></label>
+        <label>適用強さ: <input type="range" id="strength-slider" min="0" max="1" step="0.01" value="1.0" /><span id="strength-value">1.00</span></label>
+      </div>
+      <button id="apply-color-btn">この色を適用</button>
+    </section>
+
+    <!-- 4. ビフォー・アフター -->
+    <section id="view-section">
+      <h2>4. 表示切替</h2>
+      <div class="view-controls">
+        <button id="view-before-btn">ビフォー</button>
+        <button id="view-after-btn">アフター</button>
+        <button id="view-compare-btn">比較</button>
+        <button id="download-btn">画像を保存</button>
+        <button id="reset-btn">リセット</button>
+      </div>
+    </section>
+
+  </main>
+
+  <footer>
+    <p>※ 表示色は環境により実際と異なる場合があります。</p>
+  </footer>
+
+  <script>
+    // JS は後で実装
+  </script>
+</body>
+</html>
