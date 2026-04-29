@@ -5,7 +5,32 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>外壁カラーシミュレーター</title>
   <style>
-    /* CSS は後で実装 */
+    /* Canvas section minimum styles */
+    #canvas-wrapper {
+      position: relative;
+      display: inline-block;
+      max-width: 100%;
+      border: 1px solid #ccc;
+      background: #f0f0f0;
+      overflow: hidden;
+    }
+    #canvas-wrapper canvas {
+      display: block;
+      max-width: 100%;
+    }
+    #image-canvas {
+      position: relative;
+    }
+    #overlay-canvas {
+      position: absolute;
+      top: 0;
+      left: 0;
+      cursor: crosshair;
+    }
+    #overlay-canvas.readonly {
+      cursor: default;
+      pointer-events: none;
+    }
   </style>
 </head>
 <body>
@@ -98,7 +123,198 @@
   </footer>
 
   <script>
-    // JS は後で実装
+    // ─── State ────────────────────────────────────────────────────────────────
+    const state = {
+      originalImage: null,   // HTMLImageElement
+      canvasW: 0,
+      canvasH: 0,
+      // regions[i] = { points: [{x,y},...], closed: bool }
+      regions: [
+        { points: [], closed: false },
+        { points: [], closed: false },
+      ],
+      activeRegion: 0,
+      drawing: false,        // polygon drawing mode
+    };
+
+    // ─── Canvas refs ─────────────────────────────────────────────────────────
+    const imgCanvas  = document.getElementById('image-canvas');
+    const imgCtx     = imgCanvas.getContext('2d');
+    const overlayCanvas = document.getElementById('overlay-canvas');
+    const overlayCtx = overlayCanvas.getContext('2d');
+
+    // ─── Image loading ────────────────────────────────────────────────────────
+    function loadImage(src) {
+      const img = new Image();
+      img.onload = () => {
+        state.originalImage = img;
+        fitCanvas(img);
+        drawImage();
+        drawOverlay();
+      };
+      img.onerror = () => alert('画像の読み込みに失敗しました');
+      img.src = src;
+    }
+
+    // Canvas サイズを画像に合わせる（最大 1200px 幅にスケール）
+    function fitCanvas(img) {
+      const MAX = 1200;
+      const scale = img.naturalWidth > MAX ? MAX / img.naturalWidth : 1;
+      state.canvasW = Math.round(img.naturalWidth  * scale);
+      state.canvasH = Math.round(img.naturalHeight * scale);
+
+      [imgCanvas, overlayCanvas].forEach(c => {
+        c.width  = state.canvasW;
+        c.height = state.canvasH;
+      });
+    }
+
+    // 画像を image-canvas に描画
+    function drawImage() {
+      if (!state.originalImage) return;
+      imgCtx.drawImage(state.originalImage, 0, 0, state.canvasW, state.canvasH);
+    }
+
+    // ─── Overlay 描画 ────────────────────────────────────────────────────────
+    const REGION_COLORS = ['rgba(0,160,255,0.55)', 'rgba(255,100,0,0.55)'];
+    const REGION_STROKE = ['#007bff', '#ff6400'];
+
+    function drawOverlay() {
+      overlayCtx.clearRect(0, 0, state.canvasW, state.canvasH);
+
+      state.regions.forEach((region, idx) => {
+        if (region.points.length === 0) return;
+        const color  = REGION_COLORS[idx];
+        const stroke = REGION_STROKE[idx];
+
+        overlayCtx.beginPath();
+        overlayCtx.moveTo(region.points[0].x, region.points[0].y);
+        region.points.forEach(p => overlayCtx.lineTo(p.x, p.y));
+        if (region.closed) overlayCtx.closePath();
+
+        if (region.closed) {
+          overlayCtx.fillStyle = color;
+          overlayCtx.fill();
+        }
+        overlayCtx.strokeStyle = stroke;
+        overlayCtx.lineWidth = 2;
+        overlayCtx.stroke();
+
+        // 頂点マーカー
+        region.points.forEach((p, pi) => {
+          overlayCtx.beginPath();
+          overlayCtx.arc(p.x, p.y, pi === 0 ? 6 : 4, 0, Math.PI * 2);
+          overlayCtx.fillStyle = pi === 0 ? '#fff' : stroke;
+          overlayCtx.fill();
+          overlayCtx.strokeStyle = stroke;
+          overlayCtx.lineWidth = 2;
+          overlayCtx.stroke();
+        });
+      });
+    }
+
+    // ─── Canvas クリック → 頂点追加 ──────────────────────────────────────────
+    function getCanvasPos(e) {
+      const rect = overlayCanvas.getBoundingClientRect();
+      const scaleX = state.canvasW / rect.width;
+      const scaleY = state.canvasH / rect.height;
+      return {
+        x: (e.clientX - rect.left) * scaleX,
+        y: (e.clientY - rect.top)  * scaleY,
+      };
+    }
+
+    overlayCanvas.addEventListener('click', e => {
+      if (!state.drawing) return;
+      const region = state.regions[state.activeRegion];
+      if (region.closed) return;
+
+      const pos = getCanvasPos(e);
+
+      // 最初の点に近ければ閉じる
+      if (region.points.length >= 3) {
+        const first = region.points[0];
+        const dist  = Math.hypot(pos.x - first.x, pos.y - first.y);
+        if (dist < 12) {
+          region.closed = true;
+          state.drawing  = false;
+          overlayCanvas.classList.add('readonly');
+          drawOverlay();
+          return;
+        }
+      }
+
+      region.points.push(pos);
+      drawOverlay();
+    });
+
+    // ─── コントロールボタン ───────────────────────────────────────────────────
+    document.getElementById('draw-start-btn').addEventListener('click', () => {
+      state.drawing = true;
+      const region = state.regions[state.activeRegion];
+      region.closed = false;
+      overlayCanvas.classList.remove('readonly');
+    });
+
+    document.getElementById('draw-undo-btn').addEventListener('click', () => {
+      const region = state.regions[state.activeRegion];
+      region.points.pop();
+      region.closed = false;
+      drawOverlay();
+    });
+
+    document.getElementById('draw-finish-btn').addEventListener('click', () => {
+      const region = state.regions[state.activeRegion];
+      if (region.points.length >= 3) {
+        region.closed = true;
+        state.drawing  = false;
+        overlayCanvas.classList.add('readonly');
+        drawOverlay();
+      } else {
+        alert('3点以上クリックしてください');
+      }
+    });
+
+    document.getElementById('draw-clear-btn').addEventListener('click', () => {
+      const region = state.regions[state.activeRegion];
+      region.points = [];
+      region.closed = false;
+      state.drawing  = false;
+      overlayCanvas.classList.add('readonly');
+      drawOverlay();
+    });
+
+    document.getElementById('region-select').addEventListener('change', e => {
+      state.activeRegion = parseInt(e.target.value, 10);
+    });
+
+    // ─── 画像入力タブ ─────────────────────────────────────────────────────────
+    document.querySelectorAll('.input-tabs button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
+        document.getElementById(`tab-${btn.dataset.tab}`).hidden = false;
+      });
+    });
+
+    document.getElementById('file-input').addEventListener('change', e => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = ev => loadImage(ev.target.result);
+      reader.readAsDataURL(file);
+    });
+
+    document.getElementById('base64-load-btn').addEventListener('click', () => {
+      let src = document.getElementById('base64-input').value.trim();
+      if (!src) return;
+      if (!src.startsWith('data:')) src = 'data:image/jpeg;base64,' + src;
+      loadImage(src);
+    });
+
+    document.getElementById('url-load-btn').addEventListener('click', () => {
+      const src = document.getElementById('url-input').value.trim();
+      if (src) loadImage(src);
+    });
   </script>
 </body>
 </html>
