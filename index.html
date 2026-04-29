@@ -283,16 +283,17 @@
 
     // ─── State ────────────────────────────────────────────────────────────────
     const state = {
-      originalImage: null,   // HTMLImageElement
+      originalImage: null,
       canvasW: 0,
       canvasH: 0,
-      // regions[i] = { points: [{x,y},...], closed: bool }
       regions: [
-        { points: [], closed: false },
-        { points: [], closed: false },
+        { points: [], closed: false, hex: '#888888' },
+        { points: [], closed: false, hex: '#888888' },
       ],
       activeRegion: 0,
-      drawing: false,        // polygon drawing mode
+      drawing: false,
+      resultImageData: null, // 最後に適用した結果
+      viewMode: 'after',     // 'before' | 'after' | 'compare'
     };
 
     // ─── Canvas refs ─────────────────────────────────────────────────────────
@@ -442,10 +443,6 @@
       drawOverlay();
     });
 
-    document.getElementById('region-select').addEventListener('change', e => {
-      state.activeRegion = parseInt(e.target.value, 10);
-    });
-
     // ─── 画像入力タブ ─────────────────────────────────────────────────────────
     document.querySelectorAll('.input-tabs button').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -472,6 +469,179 @@
     document.getElementById('url-load-btn').addEventListener('click', () => {
       const src = document.getElementById('url-input').value.trim();
       if (src) loadImage(src);
+    });
+
+    // ─── リカラー処理 ────────────────────────────────────────────────────────
+
+    // ポリゴンをオフスクリーンキャンバスに描いてアルファマスクを取得
+    function buildMask(region) {
+      const mc = document.createElement('canvas');
+      mc.width  = state.canvasW;
+      mc.height = state.canvasH;
+      const mctx = mc.getContext('2d');
+      mctx.beginPath();
+      mctx.moveTo(region.points[0].x, region.points[0].y);
+      region.points.forEach(p => mctx.lineTo(p.x, p.y));
+      mctx.closePath();
+      mctx.fillStyle = '#fff';
+      mctx.fill();
+      return mctx.getImageData(0, 0, state.canvasW, state.canvasH).data;
+    }
+
+    function applyRecolor() {
+      if (!state.originalImage) { alert('先に画像を読み込んでください'); return; }
+
+      const satBlend = parseFloat(document.getElementById('sat-slider').value);
+      const strength = parseFloat(document.getElementById('strength-slider').value);
+
+      // 元画像を image-canvas に描き直して ImageData 取得
+      drawImage();
+      const imageData = imgCtx.getImageData(0, 0, state.canvasW, state.canvasH);
+      const d = imageData.data;
+
+      state.regions.forEach(region => {
+        if (!region.closed || region.points.length < 3) return;
+        const mask = buildMask(region);
+        const { h: targetH, s: targetS } = hexToHs(region.hex);
+
+        for (let i = 0; i < d.length; i += 4) {
+          if (mask[i] === 0) continue; // マスク外
+          const [nr, ng, nb] = recolorPixel(d[i], d[i+1], d[i+2], targetH, targetS, satBlend, strength);
+          d[i] = nr; d[i+1] = ng; d[i+2] = nb;
+        }
+      });
+
+      state.resultImageData = imageData;
+      renderView();
+    }
+
+    // ─── ビュー表示 ──────────────────────────────────────────────────────────
+
+    function renderView() {
+      if (!state.originalImage) return;
+      const mode = state.viewMode;
+
+      if (mode === 'before') {
+        drawImage();
+        return;
+      }
+      if (mode === 'after') {
+        if (state.resultImageData) {
+          imgCtx.putImageData(state.resultImageData, 0, 0);
+        } else {
+          drawImage();
+        }
+        return;
+      }
+      if (mode === 'compare') {
+        // 左半分: ビフォー / 右半分: アフター
+        drawImage();
+        if (!state.resultImageData) return;
+        const half = Math.floor(state.canvasW / 2);
+        const slice = imgCtx.createImageData(half, state.canvasH);
+        const src   = state.resultImageData.data;
+        const dst   = slice.data;
+        for (let y = 0; y < state.canvasH; y++) {
+          for (let x = 0; x < half; x++) {
+            const si = (y * state.canvasW + x) * 4;
+            const di = (y * half + x) * 4;
+            dst[di]   = src[si];
+            dst[di+1] = src[si+1];
+            dst[di+2] = src[si+2];
+            dst[di+3] = src[si+3];
+          }
+        }
+        imgCtx.putImageData(slice, half, 0);
+        // 境界線
+        imgCtx.save();
+        imgCtx.strokeStyle = '#fff';
+        imgCtx.lineWidth = 2;
+        imgCtx.setLineDash([6, 4]);
+        imgCtx.beginPath();
+        imgCtx.moveTo(half, 0);
+        imgCtx.lineTo(half, state.canvasH);
+        imgCtx.stroke();
+        imgCtx.restore();
+      }
+    }
+
+    // ─── 色入力 UI ───────────────────────────────────────────────────────────
+
+    const hexInput  = document.getElementById('hex-input');
+    const hexText   = document.getElementById('hex-text');
+    const preview   = document.getElementById('color-preview');
+
+    function syncColor(hex) {
+      hexInput.value = hex;
+      hexText.value  = hex;
+      preview.style.backgroundColor = hex;
+      state.regions[state.activeRegion].hex = hex;
+    }
+
+    hexInput.addEventListener('input', () => syncColor(hexInput.value));
+    hexText.addEventListener('change', () => {
+      const v = hexText.value.trim();
+      if (/^#[0-9a-fA-F]{6}$/.test(v)) syncColor(v);
+    });
+
+    document.getElementById('nittoko-apply-btn').addEventListener('click', () => {
+      const code = document.getElementById('nittoko-input').value.trim();
+      const hex  = nittokoToHex(code);
+      if (hex) {
+        syncColor(hex);
+      } else {
+        alert(`"${code}" は認識できない色番号です`);
+      }
+    });
+    document.getElementById('nittoko-input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('nittoko-apply-btn').click();
+    });
+
+    // スライダー表示
+    ['sat', 'strength'].forEach(id => {
+      const slider = document.getElementById(`${id}-slider`);
+      const label  = document.getElementById(`${id}-value`);
+      slider.addEventListener('input', () => {
+        label.textContent = parseFloat(slider.value).toFixed(2);
+      });
+    });
+
+    // ─── アクションボタン ─────────────────────────────────────────────────────
+
+    document.getElementById('apply-color-btn').addEventListener('click', applyRecolor);
+
+    document.getElementById('view-before-btn').addEventListener('click', () => {
+      state.viewMode = 'before'; renderView();
+    });
+    document.getElementById('view-after-btn').addEventListener('click', () => {
+      state.viewMode = 'after'; renderView();
+    });
+    document.getElementById('view-compare-btn').addEventListener('click', () => {
+      state.viewMode = 'compare'; renderView();
+    });
+
+    document.getElementById('download-btn').addEventListener('click', () => {
+      if (!state.originalImage) { alert('画像がありません'); return; }
+      const link = document.createElement('a');
+      link.download = 'simulation.png';
+      link.href = imgCanvas.toDataURL('image/png');
+      link.click();
+    });
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      state.resultImageData = null;
+      state.regions.forEach(r => { r.points = []; r.closed = false; r.hex = '#888888'; });
+      state.drawing = false;
+      overlayCanvas.classList.add('readonly');
+      drawImage();
+      drawOverlay();
+      syncColor('#888888');
+    });
+
+    // エリア切替時に色プレビューを更新
+    document.getElementById('region-select').addEventListener('change', e => {
+      state.activeRegion = parseInt(e.target.value, 10);
+      syncColor(state.regions[state.activeRegion].hex);
     });
   </script>
 </body>
