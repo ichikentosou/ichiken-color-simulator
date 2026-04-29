@@ -5,31 +5,260 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>外壁カラーシミュレーター</title>
   <style>
-    /* Canvas section minimum styles */
+    /* ── Reset & base ────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Hiragino Sans', 'Meiryo', sans-serif;
+      font-size: 14px;
+      background: #f5f6f8;
+      color: #333;
+      min-height: 100vh;
+    }
+
+    /* ── Header ──────────────────────────────────────────────────────────── */
+    #app-header {
+      background: #1a3a5c;
+      color: #fff;
+      padding: 16px 24px;
+    }
+    #app-header h1 { font-size: 20px; font-weight: 700; letter-spacing: .04em; }
+    #app-header .subtitle { font-size: 12px; opacity: .75; margin-top: 2px; }
+
+    /* ── Main layout ─────────────────────────────────────────────────────── */
+    #app-main {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      grid-template-rows: auto auto auto;
+      grid-template-areas:
+        "input  canvas"
+        "color  canvas"
+        "view   canvas";
+      gap: 12px;
+      padding: 16px;
+      max-width: 1400px;
+      margin: 0 auto;
+      align-items: start;
+    }
+    #image-input-section { grid-area: input; }
+    #canvas-section      { grid-area: canvas; }
+    #color-section       { grid-area: color; }
+    #view-section        { grid-area: view; }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    section {
+      background: #fff;
+      border-radius: 8px;
+      box-shadow: 0 1px 4px rgba(0,0,0,.10);
+      padding: 16px;
+    }
+    section h2 {
+      font-size: 13px;
+      font-weight: 700;
+      color: #1a3a5c;
+      border-left: 3px solid #1a7fc1;
+      padding-left: 8px;
+      margin-bottom: 12px;
+      letter-spacing: .03em;
+    }
+
+    /* ── Buttons (shared) ────────────────────────────────────────────────── */
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: 4px;
+      padding: 6px 12px;
+      font-size: 13px;
+      transition: opacity .15s, background .15s;
+    }
+    button:hover { opacity: .85; }
+    button:active { opacity: .7; }
+
+    .btn-primary   { background: #1a7fc1; color: #fff; }
+    .btn-secondary { background: #e0e6ee; color: #333; }
+    .btn-danger    { background: #d9534f; color: #fff; }
+    .btn-success   { background: #3a9e6a; color: #fff; }
+    .btn-view      { background: #e8ecf2; color: #1a3a5c; font-weight: 600; }
+    .btn-view.active { background: #1a7fc1; color: #fff; }
+
+    /* ── Section 1: 画像入力 ─────────────────────────────────────────────── */
+    .input-tabs {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+    .input-tabs button {
+      flex: 1;
+      background: #e8ecf2;
+      color: #444;
+      font-size: 12px;
+      padding: 5px 8px;
+      border-radius: 4px;
+    }
+    .input-tabs button.active {
+      background: #1a7fc1;
+      color: #fff;
+    }
+    .tab-panel { display: flex; flex-direction: column; gap: 6px; }
+    #file-input { font-size: 13px; }
+    #base64-input {
+      width: 100%;
+      height: 80px;
+      font-size: 11px;
+      font-family: monospace;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 6px;
+      resize: vertical;
+    }
+    #url-input {
+      width: 100%;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 13px;
+    }
+
+    /* ── Section 2: キャンバス ───────────────────────────────────────────── */
     #canvas-wrapper {
       position: relative;
       display: inline-block;
-      max-width: 100%;
-      border: 1px solid #ccc;
-      background: #f0f0f0;
+      width: 100%;
+      border-radius: 4px;
+      border: 1px solid #d0d6de;
+      background: repeating-conic-gradient(#d8dce2 0% 25%, #eef0f3 0% 50%)
+                  0 0 / 20px 20px; /* チェッカー（画像未読込時） */
       overflow: hidden;
+      min-height: 160px;
     }
     #canvas-wrapper canvas {
       display: block;
       max-width: 100%;
+      height: auto;
     }
-    #image-canvas {
-      position: relative;
-    }
+    #image-canvas { position: relative; }
     #overlay-canvas {
       position: absolute;
-      top: 0;
-      left: 0;
+      top: 0; left: 0;
       cursor: crosshair;
+      width: 100%;
+      height: 100%;
     }
     #overlay-canvas.readonly {
       cursor: default;
       pointer-events: none;
+    }
+
+    #mask-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 10px;
+      align-items: center;
+    }
+    #mask-controls label {
+      font-size: 13px;
+      white-space: nowrap;
+    }
+    #region-select {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 13px;
+      margin-left: 4px;
+    }
+    .draw-hint {
+      font-size: 11px;
+      color: #888;
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    /* ── Section 3: 色指定 ───────────────────────────────────────────────── */
+    .color-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .color-controls label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      flex-wrap: wrap;
+    }
+    #nittoko-input {
+      width: 100px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: monospace;
+      letter-spacing: .05em;
+    }
+    #hex-input { width: 40px; height: 30px; padding: 2px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; }
+    #hex-text {
+      width: 90px;
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 5px 8px;
+      font-size: 13px;
+      font-family: monospace;
+    }
+    .swatch {
+      width: 48px; height: 30px;
+      border-radius: 4px;
+      border: 1px solid #ccc;
+      background: #888;
+      flex-shrink: 0;
+    }
+
+    .slider-controls {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .slider-controls label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+    }
+    .slider-controls input[type=range] { flex: 1; accent-color: #1a7fc1; }
+    .slider-controls span {
+      width: 34px;
+      text-align: right;
+      font-family: monospace;
+      font-size: 12px;
+      color: #555;
+    }
+
+    /* ── Section 4: ビュー切替 ───────────────────────────────────────────── */
+    .view-controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────────── */
+    footer {
+      text-align: center;
+      font-size: 11px;
+      color: #aaa;
+      padding: 16px;
+    }
+
+    /* ── レスポンシブ（幅 < 800px で縦積み） ────────────────────────────── */
+    @media (max-width: 800px) {
+      #app-main {
+        grid-template-columns: 1fr;
+        grid-template-areas:
+          "input"
+          "canvas"
+          "color"
+          "view";
+      }
     }
   </style>
 </head>
@@ -76,11 +305,12 @@
             <option value="1">エリア2</option>
           </select>
         </label>
-        <button id="draw-start-btn">ポリゴン描画開始</button>
-        <button id="draw-undo-btn">直前の点を取消</button>
-        <button id="draw-finish-btn">確定</button>
-        <button id="draw-clear-btn">クリア</button>
+        <button id="draw-start-btn"  class="btn-primary">描画開始</button>
+        <button id="draw-undo-btn"   class="btn-secondary">取消</button>
+        <button id="draw-finish-btn" class="btn-secondary">確定</button>
+        <button id="draw-clear-btn"  class="btn-danger">クリア</button>
       </div>
+      <p class="draw-hint">「描画開始」後にキャンバスをクリックして頂点を追加。最初の点をクリックするか「確定」で閉じます。</p>
     </section>
 
     <!-- 3. 色指定 -->
@@ -89,7 +319,7 @@
       <div class="color-controls">
         <label>日塗工色番号:
           <input type="text" id="nittoko-input" placeholder="例: 25-75B" />
-          <button id="nittoko-apply-btn">変換</button>
+          <button id="nittoko-apply-btn" class="btn-secondary">変換</button>
         </label>
         <label>HEX:
           <input type="color" id="hex-input" value="#888888" />
@@ -101,18 +331,18 @@
         <label>彩度ブレンド: <input type="range" id="sat-slider" min="0" max="1" step="0.01" value="0.7" /><span id="sat-value">0.70</span></label>
         <label>適用強さ: <input type="range" id="strength-slider" min="0" max="1" step="0.01" value="1.0" /><span id="strength-value">1.00</span></label>
       </div>
-      <button id="apply-color-btn">この色を適用</button>
+      <button id="apply-color-btn" class="btn-success" style="width:100%;padding:10px;font-size:14px;font-weight:700;margin-top:4px;">この色を適用</button>
     </section>
 
     <!-- 4. ビフォー・アフター -->
     <section id="view-section">
       <h2>4. 表示切替</h2>
       <div class="view-controls">
-        <button id="view-before-btn">ビフォー</button>
-        <button id="view-after-btn">アフター</button>
-        <button id="view-compare-btn">比較</button>
-        <button id="download-btn">画像を保存</button>
-        <button id="reset-btn">リセット</button>
+        <button id="view-before-btn"  class="btn-view">ビフォー</button>
+        <button id="view-after-btn"   class="btn-view active">アフター</button>
+        <button id="view-compare-btn" class="btn-view">左右比較</button>
+        <button id="download-btn"     class="btn-primary">画像を保存</button>
+        <button id="reset-btn"        class="btn-danger">リセット</button>
       </div>
     </section>
 
@@ -444,8 +674,12 @@
     });
 
     // ─── 画像入力タブ ─────────────────────────────────────────────────────────
-    document.querySelectorAll('.input-tabs button').forEach(btn => {
+    const tabBtns = document.querySelectorAll('.input-tabs button');
+    tabBtns[0].classList.add('active'); // 初期: ファイル選択
+    tabBtns.forEach(btn => {
       btn.addEventListener('click', () => {
+        tabBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
         document.querySelectorAll('.tab-panel').forEach(p => p.hidden = true);
         document.getElementById(`tab-${btn.dataset.tab}`).hidden = false;
       });
@@ -610,15 +844,19 @@
 
     document.getElementById('apply-color-btn').addEventListener('click', applyRecolor);
 
-    document.getElementById('view-before-btn').addEventListener('click', () => {
-      state.viewMode = 'before'; renderView();
-    });
-    document.getElementById('view-after-btn').addEventListener('click', () => {
-      state.viewMode = 'after'; renderView();
-    });
-    document.getElementById('view-compare-btn').addEventListener('click', () => {
-      state.viewMode = 'compare'; renderView();
-    });
+    const viewBtns = {
+      before:  document.getElementById('view-before-btn'),
+      after:   document.getElementById('view-after-btn'),
+      compare: document.getElementById('view-compare-btn'),
+    };
+    function setViewMode(mode) {
+      state.viewMode = mode;
+      Object.entries(viewBtns).forEach(([k, b]) => b.classList.toggle('active', k === mode));
+      renderView();
+    }
+    viewBtns.before.addEventListener('click',  () => setViewMode('before'));
+    viewBtns.after.addEventListener('click',   () => setViewMode('after'));
+    viewBtns.compare.addEventListener('click', () => setViewMode('compare'));
 
     document.getElementById('download-btn').addEventListener('click', () => {
       if (!state.originalImage) { alert('画像がありません'); return; }
